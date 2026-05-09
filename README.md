@@ -9,17 +9,9 @@ Sequential recommendation model incorporating semantic and graph pooling.
 │   ├── dataloader.py        # Custom dataloader with transforms
 │   ├── dataset.py           # SGPDataset - loads embeddings and interactions
 │   └── transform.py         # Data augmentation transforms
-├── dataset/                 # Processed dataset (train/valid/test .inter files)
-│   ├── baby/
-│   └── office/
-├── data_raw/                # Raw Amazon data (before preprocessing)
-│   ├── baby/
-│   └── office/
-├── processed/               # Preprocessed features (image/text embeddings)
-│   ├── baby/
-│   └── office/
-├── scripts/
-│   └── preprocess_amazon_old.py  # Raw data → dataset preprocessing
+├── dataset/                 # Dataset archive and unzipped training files
+│   ├── baby_modern_bge_siglip.tar.gz
+│   └── baby_modern_raw_unzip/
 ├── run.py                   # Main training script
 ├── sgp.py                   # SGP model implementation
 ├── model_utils.py           # Model utilities
@@ -28,114 +20,206 @@ Sequential recommendation model incorporating semantic and graph pooling.
 └── README.md
 ```
 
-## Data Pipeline
+## Data
 
-### 1. Download Raw Data from Amazon
+Data của project được unzip trực tiếp từ file:
 
-Download review, metadata, and image features from [Stanford SNAP](http://snap.stanford.edu/data/amazon/productGraph/):
-
-```powershell
-# Create directories
-mkdir data_raw\baby data_raw\office
-
-# Baby category
-curl.exe -L "http://snap.stanford.edu/data/amazon/productGraph/categoryFiles/reviews_Baby.json.gz" -o "data_raw\baby\reviews_Baby.json.gz"
-curl.exe -L "http://snap.stanford.edu/data/amazon/productGraph/categoryFiles/meta_Baby.json.gz" -o "data_raw\baby\meta_Baby.json.gz"
-curl.exe -L "http://snap.stanford.edu/data/amazon/productGraph/image_features/categoryFiles/image_features_Baby.b" -o "data_raw\baby\image_features_Baby.b"
-
-# Office Products category
-curl.exe -L "http://snap.stanford.edu/data/amazon/productGraph/categoryFiles/reviews_Office_Products.json.gz" -o "data_raw\office\reviews_Office_Products.json.gz"
-curl.exe -L "http://snap.stanford.edu/data/amazon/productGraph/categoryFiles/meta_Office_Products.json.gz" -o "data_raw\office\meta_Office_Products.json.gz"
-curl.exe -L "http://snap.stanford.edu/data/amazon/productGraph/image_features/categoryFiles/image_features_Office_Products.b" -o "data_raw\office\image_features_Office_Products.b"
+```text
+/kaggle/SGP4SR/dataset/baby_modern_bge_siglip.tar.gz
 ```
 
-### 2. Preprocess Data
+File nén này đã chứa sẵn:
 
-Process raw data: filter users/items (k-core), build sequences, extract embeddings:
+- `baby.train.inter`: tập train.
+- `baby.valid.inter`: tập validation dùng trong quá trình train/early stopping.
+- `baby.test.inter`: tập test dùng để đánh giá cuối cùng.
+- `text_features_bge.npy`: vector text BGE, shape `(7015, 768)`.
+- `image_features_siglip.npy`: vector image SigLIP, shape `(7015, 768)`.
 
-```powershell
-# Baby dataset
-python scripts/preprocess_amazon_old.py `
-  --name baby `
-  --reviews data_raw\baby\reviews_Baby.json.gz `
-  --meta data_raw\baby\meta_Baby.json.gz `
-  --image-features data_raw\baby\image_features_Baby.b `
-  --out-dataset dataset\baby `
-  --out-processed processed\baby `
-  --min-user 5 `
-  --min-item 5
+### 1. Unzip Data
 
-# Office dataset
-python scripts/preprocess_amazon_old.py `
-  --name office `
-  --reviews data_raw\office\reviews_Office_Products.json.gz `
-  --meta data_raw\office\meta_Office_Products.json.gz `
-  --image-features data_raw\office\image_features_Office_Products.b `
-  --out-dataset dataset\office `
-  --out-processed processed\office `
-  --min-user 5 `
-  --min-item 5
+Chạy các lệnh sau từ thư mục project:
+
+```bash
+cd /kaggle/SGP4SR
+
+mkdir -p dataset/baby_modern_raw_unzip
+tar -xzf dataset/baby_modern_bge_siglip.tar.gz -C dataset/baby_modern_raw_unzip
 ```
 
-Preprocessing output:
-- `dataset/{name}/{name}.{train,valid,test}.inter` – Sequential interactions
-- `processed/{name}/image_features.npy` – Image embeddings (4096-dim)
-- `processed/{name}/text_features.npy` – Text embeddings (384-dim, if available)
+Sau khi unzip, folder data gốc sẽ có dạng:
+
+```text
+dataset/baby_modern_raw_unzip/
+`-- baby_modern/
+    |-- dataset/baby/
+    |   |-- baby.train.inter
+    |   |-- baby.valid.inter
+    |   `-- baby.test.inter
+    |-- text_features_bge.npy
+    |-- image_features_siglip.npy
+    |-- item_text.jsonl
+    |-- image_paths.jsonl
+    |-- image_download_failed.jsonl
+    |-- item2id.json
+    `-- user2id.json
+```
+
+### 2. Create RecBole File Links
+
+RecBole đọc dataset theo tên folder và tên file cùng prefix. Vì folder train sẽ là `baby_modern_raw_unzip`, cần tạo các symlink sau:
+
+```bash
+cd /kaggle/SGP4SR
+
+ln -sf baby_modern/dataset/baby/baby.train.inter dataset/baby_modern_raw_unzip/baby_modern_raw_unzip.train.inter
+ln -sf baby_modern/dataset/baby/baby.valid.inter dataset/baby_modern_raw_unzip/baby_modern_raw_unzip.valid.inter
+ln -sf baby_modern/dataset/baby/baby.test.inter dataset/baby_modern_raw_unzip/baby_modern_raw_unzip.test.inter
+ln -sf baby_modern/text_features_bge.npy dataset/baby_modern_raw_unzip/baby_modern_raw_unzip.text
+ln -sf baby_modern/image_features_siglip.npy dataset/baby_modern_raw_unzip/baby_modern_raw_unzip.image
+```
+
+Sau bước này, folder dùng để train sẽ có các file/link chính:
+
+```text
+dataset/baby_modern_raw_unzip/
+|-- baby_modern_raw_unzip.train.inter -> baby_modern/dataset/baby/baby.train.inter
+|-- baby_modern_raw_unzip.valid.inter -> baby_modern/dataset/baby/baby.valid.inter
+|-- baby_modern_raw_unzip.test.inter  -> baby_modern/dataset/baby/baby.test.inter
+|-- baby_modern_raw_unzip.text        -> baby_modern/text_features_bge.npy
+|-- baby_modern_raw_unzip.image       -> baby_modern/image_features_siglip.npy
+`-- baby_modern/
+```
+
+### 3. Quick Check
+
+Kiểm tra data/link đã có đúng chưa:
+
+```bash
+ls -l dataset/baby_modern_raw_unzip
+```
+
+Tên dataset dùng cho training là:
+
+```text
+baby_modern_raw_unzip
+```
+
+### All-in-One Setup
+
+Có thể chạy toàn bộ bước unzip + tạo symlink bằng block sau:
+
+```bash
+cd /kaggle/SGP4SR
+
+mkdir -p dataset/baby_modern_raw_unzip
+tar -xzf dataset/baby_modern_bge_siglip.tar.gz -C dataset/baby_modern_raw_unzip
+
+ln -sf baby_modern/dataset/baby/baby.train.inter dataset/baby_modern_raw_unzip/baby_modern_raw_unzip.train.inter
+ln -sf baby_modern/dataset/baby/baby.valid.inter dataset/baby_modern_raw_unzip/baby_modern_raw_unzip.valid.inter
+ln -sf baby_modern/dataset/baby/baby.test.inter dataset/baby_modern_raw_unzip/baby_modern_raw_unzip.test.inter
+ln -sf baby_modern/text_features_bge.npy dataset/baby_modern_raw_unzip/baby_modern_raw_unzip.text
+ln -sf baby_modern/image_features_siglip.npy dataset/baby_modern_raw_unzip/baby_modern_raw_unzip.image
+```
 
 ## Training
 
+### Smoke Train
+
+Chạy thử vài step để kiểm tra data, embedding, model forward/backward đều hoạt động:
+
 ```bash
-python run.py -d baby
-python run.py -d office
+cd /kaggle/SGP4SR
+python run.py -d baby_modern_raw_unzip --smoke-steps 2
 ```
 
-### Train/evaluate với `baby_modern_bge_siglip.tar.gz`
-
-Giữ nguyên file nén ở đường dẫn:
+Nếu chạy đúng, output sẽ có dạng:
 
 ```text
-dataset/baby_modern_bge_siglip.tar.gz
+smoke step 1/2 loss=...
+smoke step 2/2 loss=...
 ```
 
-Giải nén và chuẩn bị dataset cho pipeline train:
+### Full Train
+
+Chạy training full trên tập train, validate trên tập valid, và evaluate trên tập test:
 
 ```bash
-python scripts/prepare_baby_modern.py
-```
-
-Sau khi chạy xong, script sẽ tạo thư mục:
-
-```text
-dataset/baby_modern/
-|-- baby_modern.train.inter
-|-- baby_modern.valid.inter
-|-- baby_modern.test.inter
-|-- baby_modern.text
-|-- baby_modern.image
-`-- metadata/
-```
-
-Trong đó:
-
-- `baby_modern.train.inter`: tập train.
-- `baby_modern.valid.inter`: tập validation dùng trong quá trình train/early stopping.
-- `baby_modern.test.inter`: tập test dùng để đánh giá cuối cùng.
-- `baby_modern.text`: vector BGE, shape `(7015, 768)`.
-- `baby_modern.image`: vector SigLIP, shape `(7015, 768)`.
-
-Chạy training trên tập train và đánh giá trên tập test:
-
-```bash
-python run.py -d baby_modern
-```
-
-Hoặc giải nén/chuẩn bị data và chạy train trong một lệnh:
-
-```bash
-python scripts/prepare_baby_modern.py --run-train
+cd /kaggle/SGP4SR
+python run.py -d baby_modern_raw_unzip
 ```
 
 Kết quả evaluation được ghi theo logic hiện tại trong `run.py`, bao gồm `best_valid_result` và `test_result`.
+
+Kết quả JSON được lưu trong thư mục:
+
+```text
+results/
+```
+
+## Best Run Result
+
+Best run hiện tại là run 2 với config:
+
+```yaml
+learning_rate: 0.0003
+weight_decay: 1e-5
+MAX_ITEM_LIST_LENGTH: 123
+epochs: 10
+stopping_step: 10
+hidden_dropout_prob: 0.4
+attn_dropout_prob: 0.4
+```
+
+Best validation ở epoch 8 theo `Recall@5`.
+
+Best valid result:
+
+```json
+{
+  "recall@5": 0.0443,
+  "recall@10": 0.0706,
+  "recall@20": 0.1022,
+  "recall@50": 0.1675,
+  "ndcg@5": 0.0271,
+  "ndcg@10": 0.0355,
+  "ndcg@20": 0.0435,
+  "ndcg@50": 0.0564
+}
+```
+
+Test result sau khi load best model:
+
+```json
+{
+  "recall@5": 0.0355,
+  "recall@10": 0.0576,
+  "recall@20": 0.0848,
+  "recall@50": 0.1404,
+  "ndcg@5": 0.0229,
+  "ndcg@10": 0.0301,
+  "ndcg@20": 0.0369,
+  "ndcg@50": 0.0479
+}
+```
+
+Best checkpoint:
+
+```text
+saved/SGP-May-09-2026_15-17-27.pth
+```
+
+Log chi tiết:
+
+```text
+log/SGP/SGP-baby_modern_raw_unzip-May-09-2026_15-16-43-9d0c6c.log
+```
+
+JSON kết quả:
+
+```text
+results/SGP-baby_modern_raw_unzip-2026-05-09_16-08-49.json
+```
 
 Config files:
 - `SGP4SR.yaml` – Model hyperparameters

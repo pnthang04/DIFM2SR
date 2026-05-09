@@ -245,14 +245,23 @@ class SGP(SequentialRecommender):
         scores += (1 - self.mb) * torch.matmul(outputt, tcoh.transpose(0, 1))  # [B] 
         return scores 
     
-    def get_co(self, seqs,len):
-        co_mat = torch.zeros(self.n_items,self.n_items)
-        for i in range(seqs.shape[0]):
-            for k in range(len[i]):
-                for j in range(k+1,len[i]):
-                    co_mat[seqs[i][k]][seqs[i][j]] +=1/(j-k) 
-                    co_mat[seqs[i][j]][seqs[i][k]] +=1/(j-k) 
-        return co_mat
+    def get_co(self, seqs, lens):
+        seqs = np.asarray(seqs, dtype=np.int64)
+        lens = np.asarray(lens, dtype=np.int64)
+        co_mat = np.zeros((self.n_items, self.n_items), dtype=np.float32)
+
+        for row, seq_len in zip(seqs, lens):
+            items = row[:seq_len]
+            items = items[items != 0]
+            seq_len = len(items)
+            for distance in range(1, seq_len):
+                src = items[:-distance]
+                dst = items[distance:]
+                weight = np.float32(1.0 / distance)
+                np.add.at(co_mat, (src, dst), weight)
+                np.add.at(co_mat, (dst, src), weight)
+
+        return torch.from_numpy(co_mat)
 
     def extract_common_and_complement(self, a, b, n):
         m, _ = a.shape

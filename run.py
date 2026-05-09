@@ -2,6 +2,18 @@ import argparse
 from logging import getLogger, FileHandler
 import torch
 import inspect
+import numpy as np
+
+# RecBole versions used by this project still reference NumPy 1.x scalar aliases
+# during Config initialization. NumPy 2 removed some of them, so restore the
+# canonical dtype names before RecBole applies its compatibility settings.
+if not hasattr(np, 'float_'):
+    np.float_ = np.float64
+if not hasattr(np, 'complex_'):
+    np.complex_ = np.complex128
+if not hasattr(np, 'unicode_'):
+    np.unicode_ = np.str_
+
 from recbole.config import Config
 from recbole.data import data_preparation
 from recbole.utils import init_seed, init_logger, set_color
@@ -24,7 +36,30 @@ def get_logger_filename(logger):
     return filename
 
 
+def run_smoke_train_steps(config, model, train_data, steps):
+    optimizer = torch.optim.Adam(
+        model.parameters(),
+        lr=config['learning_rate'],
+        weight_decay=config['weight_decay'],
+    )
+    model.train()
+    losses = []
+    for step, interaction in enumerate(train_data, start=1):
+        if step > steps:
+            break
+        interaction = interaction.to(config['device'])
+        optimizer.zero_grad()
+        loss = model.calculate_loss(interaction)
+        loss.backward()
+        optimizer.step()
+        loss_value = float(loss.detach().cpu())
+        losses.append(loss_value)
+        print(f"smoke step {step}/{steps} loss={loss_value:.6f}")
+    return losses
+
+
 def run(dataset, setting='SGP4SR.yaml,run.yaml',log_prefix="", **kwargs):
+    smoke_steps = int(kwargs.pop('smoke_steps', 0) or 0)
     setting = setting.split(',')
     config = Config(model=SGP, dataset=dataset, config_file_list=setting, config_dict=kwargs)
 
@@ -104,6 +139,12 @@ def run(dataset, setting='SGP4SR.yaml,run.yaml',log_prefix="", **kwargs):
     model = SGP(config, train_data.dataset, co_data, co_lens).to(config['device'])
     logger.info(model)
     trainer = Trainer(config, model)
+
+    if smoke_steps > 0:
+        losses = run_smoke_train_steps(config, model, train_data, smoke_steps)
+        logger.info(f"Smoke train completed for {len(losses)} steps. losses={losses}")
+        return config['model'], config['dataset'], {'smoke_losses': losses}
+
     best_valid_score, best_valid_result = trainer.fit(
         train_data, valid_data, saved=True, show_progress=config['show_progress']
     )
@@ -173,7 +214,8 @@ if __name__ == '__main__':
     parser.add_argument('-f', type=bool, default=True)
     parser.add_argument('-setting', type=str, default='SGP4SR.yaml,run.yaml')
     parser.add_argument('-note', type=str, default='')
+    parser.add_argument('--smoke-steps', type=int, default=0)
     args, unparsed = parser.parse_known_args()
     print(args)
 
-    run(args.d, setting=args.setting, fix_enc=args.f, log_prefix=args.note)
+    run(args.d, setting=args.setting, fix_enc=args.f, log_prefix=args.note, smoke_steps=args.smoke_steps)

@@ -1,0 +1,24 @@
+{
+  "dataset": "baby_modern_raw_unzip",
+  "best_valid_result": {
+    "recall@5": 0.0427,
+    "recall@10": 0.0659,
+    "recall@20": 0.0984,
+    "recall@50": 0.1633,
+    "ndcg@5": 0.0254,
+    "ndcg@10": 0.0329,
+    "ndcg@20": 0.0411,
+    "ndcg@50": 0.0539
+  },
+  "test_result": {
+    "recall@5": 0.0335,
+    "recall@10": 0.0559,
+    "recall@20": 0.083,
+    "recall@50": 0.1364,
+    "ndcg@5": 0.021,
+    "ndcg@10": 0.0282,
+    "ndcg@20": 0.035,
+    "ndcg@50": 0.0456
+  },
+  "best_valid_score": 0.0427
+}

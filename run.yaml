@@ -12,8 +12,11 @@ metrics: [ Recall, NDCG ]
 valid_metric: Recall@5
 eval_batch_size: 1024
 train_batch_size: 512
-stopping_step: 15
-epochs: 30
+learning_rate: 0.0003
+weight_decay: 1e-5
+MAX_ITEM_LIST_LENGTH: 123
+stopping_step: 10
+epochs: 10
 
 gpu_id: '0'
 log_prefix: ''
