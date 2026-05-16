@@ -1,0 +1,5 @@
+# run train/eval/test 
+CUDA_VISIBLE_DEVICES=0 nohup python train_denoiser_main.py --benchmark Amazon --dataset beauty --lr_encoder 1e-4 --temperature 0.2 --exp_name amazon_beauty_lrenc0001 > ./log/amazon_beauty_lrenc0001.log 2>&1 &
+CUDA_VISIBLE_DEVICES=0 nohup python train_denoiser_main.py --benchmark Amazon --dataset toys --lr_encoder 1e-4 --temperature 0.2 --exp_name amazon_toys_lrenc0001 > ./log/amazon_toys_lrenc0001.log 2>&1 &
+CUDA_VISIBLE_DEVICES=0 nohup python train_denoiser_main.py --benchmark Amazon --dataset electronics --lr_encoder 1e-4 --temperature 0.2 --exp_name amazon_electronics_lrenc0001 > ./log/amazon_electronics_lrenc0001.log 2>&1 &
+CUDA_VISIBLE_DEVICES=0 nohup python train_denoiser_main.py --benchmark Amazon --dataset office --lr_encoder 1e-4 --temperature 0.2 --exp_name amazon_office_lrenc0001 > ./log/amazon_office_lrenc0001.log 2>&1 &

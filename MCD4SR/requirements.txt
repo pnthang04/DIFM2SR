@@ -1,0 +1,5 @@
+torch==2.4.0
+accelerate==1.0.1
+numpy==1.24.4
+tqdm==4.64.1
+recbole==1.2.0

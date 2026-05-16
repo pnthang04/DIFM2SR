@@ -1,0 +1,36 @@
+# dataset setting
+inter_path : './dataset/Electronics_2014/electronics.inter'
+text_feat_path : './dataset/Electronics_2014/text_feat.pt'
+image_feat_path : './dataset/Electronics_2014/image_feat.pt'
+
+num_epochs : 500
+eval_every : 1
+test_every : 5
+num_workers : 8
+max_no_improvement : 10
+
+num_users : 192403
+num_items : 63001
+
+max_seq_len : 50
+
+attn_embed_dim : 256
+text_dim : 768
+visual_dim : 768
+hidden_size : 256
+
+lr_factor : 0.1
+
+train_batch_size : 1600
+test_batch_size : 1600
+
+attn_layers : 4
+
+weight_decay : 0.01
+top_k : 50
+
+dropout : 0.1
+attn_heads : 8
+emb_dropout : 0.3
+
+
