@@ -7,6 +7,8 @@ dataset/baby_modern/
 model/
 saved/
 log/
+!MCD4SR/log/
+!MCD4SR/log/*.log
 logs/
 results/
 *.pth
