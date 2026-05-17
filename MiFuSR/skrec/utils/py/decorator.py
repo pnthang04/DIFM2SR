@@ -7,7 +7,7 @@ __all__ = ["timer", "typeassert"]
 import time
 from functools import wraps
 from inspect import signature
-from collections import Iterable
+from collections.abc import Iterable
 
 
 def typeassert(*type_args, **type_kwargs):

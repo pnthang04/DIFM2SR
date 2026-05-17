@@ -12,12 +12,6 @@ def _set_random_seed(seed=2020):
     random.seed(seed)
 
     try:
-        import tensorflow as tf
-        tf.set_random_seed(seed)
-        print("set tensorflow seed")
-    except:
-        pass
-    try:
         import torch
         torch.manual_seed(seed)
         torch.cuda.manual_seed_all(seed)

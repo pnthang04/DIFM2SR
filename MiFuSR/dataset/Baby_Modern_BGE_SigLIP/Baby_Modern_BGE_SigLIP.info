@@ -1,0 +1,6 @@
+name=Baby_Modern_BGE_SigLIP
+users=19357
+items=7015
+train_users=19357
+image_features=(7015, 768)
+text_features=(7015, 768)

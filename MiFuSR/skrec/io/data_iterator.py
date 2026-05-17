@@ -8,7 +8,7 @@ __all__ = ["PointwiseIterator", "PairwiseIterator", "InteractionIterator",
            ]
 
 from typing import Dict
-from collections import Iterable
+from collections.abc import Iterable
 from collections import OrderedDict
 import numpy as np
 from ..utils.py import OrderedDefaultDict
