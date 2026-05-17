@@ -1,0 +1,18 @@
+2025-12-17 23:05:32.082: 
+columns = UIRT
+filename = Lastfm-2k.csv
+sep = ,
+remap_user_id = True
+remap_item_id = True
+split_by = ratio
+train = 0.8
+valid = 0.0
+test = 0.2
+by_time = True
+2025-12-17 23:05:32.084: Dataset statistic information:
+2025-12-17 23:05:32.086: The number of users: 1643
+2025-12-17 23:05:32.087: The number of items: 1425
+2025-12-17 23:05:32.088: The number of ratings: 32553
+2025-12-17 23:05:32.089: Average actions of users: 19.81
+2025-12-17 23:05:32.090: Average actions of items: 22.84
+2025-12-17 23:05:32.092: The sparsity of the dataset: 98.60960374155108%%
