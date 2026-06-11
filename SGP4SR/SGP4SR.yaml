@@ -22,6 +22,10 @@ w_balw: 0.001
 balw_type: batch
 balw_max_weight: 0.75
 balw_log_batches: 5
+w_simw: 0.0
+simw_mu: 2.0
+simw_target: router
+simw_log_batches: 5
 
 use_diffusion_denoiser: False
 baseline_checkpoint_path: ''

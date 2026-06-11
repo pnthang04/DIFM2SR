@@ -15,7 +15,7 @@ train_batch_size: 512
 learning_rate: 0.0003
 weight_decay: 1e-5
 MAX_ITEM_LIST_LENGTH: 123
-stopping_step: 4
+stopping_step: 3
 epochs: 50
 
 gpu_id: '0'

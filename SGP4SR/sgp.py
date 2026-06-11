@@ -86,6 +86,13 @@ class SGP(SequentialRecommender):
         self._balw_logged_batches = 0
         if self.balw_type not in {'sample', 'batch', 'threshold'}:
             raise ValueError("balw_type must be one of: sample, batch, threshold")
+        self.w_simw = float(cfg_get(config, 'w_simw', 0.0))
+        self.simw_mu = float(cfg_get(config, 'simw_mu', 2.0))
+        self.simw_target = str(cfg_get(config, 'simw_target', 'router')).lower()
+        self.simw_log_batches = int(cfg_get(config, 'simw_log_batches', 5))
+        self._simw_logged_batches = 0
+        if self.simw_target not in {'router', 'final'}:
+            raise ValueError("simw_target must be one of: router, final")
         self.kmeans = MiniBatchKMeans(n_clusters=self.means_k, init_size=1024, batch_size=1024, random_state=100)
         self.initializer_range = config['initializer_range']
         self.loss_type = config['loss_type']
@@ -365,9 +372,9 @@ class SGP(SequentialRecommender):
         u_text = self.gather_indexes(seqst, item_seq_len - 1)
         u_visual = self.gather_indexes(seqsv, item_seq_len - 1)
         fusion_input = torch.cat([u_id, u_text, u_visual], dim=-1)
-        weights = self.intent_weight_mapper(fusion_input)
-        prior_weights = self.fusion_prior_weight.to(dtype=weights.dtype).view(1, -1)
-        weights = (1 - self.fusion_dynamic_ratio) * prior_weights + self.fusion_dynamic_ratio * weights
+        router_weights = self.intent_weight_mapper(fusion_input)
+        prior_weights = self.fusion_prior_weight.to(dtype=router_weights.dtype).view(1, -1)
+        weights = (1 - self.fusion_dynamic_ratio) * prior_weights + self.fusion_dynamic_ratio * router_weights
         w_id = weights[:, 0].view(-1, 1, 1)
         w_text = weights[:, 1].view(-1, 1, 1)
         w_visual = weights[:, 2].view(-1, 1, 1)
@@ -375,7 +382,7 @@ class SGP(SequentialRecommender):
 
         log_feats = self.last_layernorm(seqs) 
         output = self.gather_indexes(log_feats, item_seq_len - 1)   
-        return output, outputv, outputt, weights  # [B H]
+        return output, outputv, outputt, weights, router_weights  # [B H]
 
     def BALW(self, modality_weights):
         """Entropy balance regularization for id/text/visual fusion weights."""
@@ -404,6 +411,44 @@ class SGP(SequentialRecommender):
         )
         print(msg)
         self._balw_logged_batches += 1
+
+    def eva_imp(self, score, target, mu):
+        target_logits = score.gather(1, target.unsqueeze(1)).squeeze(1)
+        rank = (score > target_logits.unsqueeze(1)).sum(dim=1) + 1
+        uncertainty = (rank - 1).float() / score.size(1)
+        return torch.exp(mu * uncertainty.clamp(min=1e-8))
+
+    def SIMW(self, scores, target, weights, mu):
+        """Ranking-feedback ideal weight supervision for id/text/visual router."""
+        id_dist = self.eva_imp(scores[0], target, mu)
+        text_dist = self.eva_imp(scores[1], target, mu)
+        visual_dist = self.eva_imp(scores[2], target, mu)
+        dists = torch.stack([id_dist, text_dist, visual_dist], dim=1)
+        ideal_weights = torch.softmax(-dists, dim=-1).detach()
+        loss = F.kl_div(
+            torch.log(torch.clamp(weights, min=1e-9)),
+            ideal_weights,
+            reduction='batchmean',
+        )
+        self.maybe_log_simw(weights, ideal_weights)
+        return loss
+
+    def maybe_log_simw(self, weights, ideal_weights):
+        if self.w_simw <= 0 or self._simw_logged_batches >= self.simw_log_batches:
+            return
+        with torch.no_grad():
+            router_mean = weights.detach().mean(dim=0).cpu().tolist()
+            ideal_mean = ideal_weights.detach().mean(dim=0).cpu().tolist()
+        msg = (
+            "[simw] "
+            f"target={self.simw_target} "
+            f"ideal_id={ideal_mean[0]:.4f} ideal_text={ideal_mean[1]:.4f} "
+            f"ideal_visual={ideal_mean[2]:.4f} "
+            f"router_id={router_mean[0]:.4f} router_text={router_mean[1]:.4f} "
+            f"router_visual={router_mean[2]:.4f}"
+        )
+        print(msg)
+        self._simw_logged_batches += 1
     
     def compute_max_similarity_index(self, j, i):
         similarity = torch.matmul(j, i.transpose(1, 2))
@@ -416,7 +461,7 @@ class SGP(SequentialRecommender):
         _,hmv_emb,hmt_emb = self.mod()
         item_seq = interaction[self.ITEM_SEQ]
         item_seq_len = interaction[self.ITEM_SEQ_LEN]
-        seq_output, outputv, outputt, modality_weights = self.forward(item_seq, item_seq_len)
+        seq_output, outputv, outputt, modality_weights, router_weights = self.forward(item_seq, item_seq_len)
         pos_items = interaction[self.POS_ITEM_ID]
 
         if self.loss_type == 'BPR':
@@ -428,12 +473,20 @@ class SGP(SequentialRecommender):
             loss = self.loss_fct(pos_score, neg_score)
         else:  # self.loss_type = 'CE'
             test_item_emb = self.item_embedding.weight
-            logits = torch.matmul(seq_output, test_item_emb.transpose(0, 1))
-            loss = self.loss_fct(logits, pos_items)
-            logits = torch.matmul(outputv, hmv_emb.transpose(0, 1))
-            loss += self.mb * self.loss_fct(logits, pos_items)
-            logits = torch.matmul(outputt, hmt_emb.transpose(0, 1))
-            loss += (1 - self.mb) * self.loss_fct(logits, pos_items)
+            id_logits = torch.matmul(seq_output, test_item_emb.transpose(0, 1))
+            visual_logits = torch.matmul(outputv, hmv_emb.transpose(0, 1))
+            text_logits = torch.matmul(outputt, hmt_emb.transpose(0, 1))
+            loss = self.loss_fct(id_logits, pos_items)
+            loss += self.mb * self.loss_fct(visual_logits, pos_items)
+            loss += (1 - self.mb) * self.loss_fct(text_logits, pos_items)
+            if self.w_simw > 0:
+                simw_weights = router_weights if self.simw_target == 'router' else modality_weights
+                loss += self.w_simw * self.SIMW(
+                    [id_logits, text_logits, visual_logits],
+                    pos_items,
+                    simw_weights,
+                    self.simw_mu,
+                )
 
         if self.w_balw > 0:
             self.maybe_log_fusion_weights(modality_weights)
@@ -445,7 +498,7 @@ class SGP(SequentialRecommender):
         h,vcoh,tcoh = self.mod()
         item_seq = interaction[self.ITEM_SEQ]
         item_seq_len = interaction[self.ITEM_SEQ_LEN]
-        seq_output, outputv, outputt, _ = self.forward(item_seq, item_seq_len)
+        seq_output, outputv, outputt, _, _ = self.forward(item_seq, item_seq_len)
         test_items_emb = self.item_embedding.weight
         scores = torch.matmul(seq_output, test_items_emb.transpose(0, 1))  # [B n_items]
         scores += self.mb * torch.matmul(outputv, vcoh.transpose(0, 1))  # [B]

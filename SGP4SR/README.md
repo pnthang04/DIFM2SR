@@ -157,6 +157,84 @@ Kết quả JSON được lưu trong thư mục:
 results/
 ```
 
+## Experiment Controls
+
+Các tham số chính đang được lưu trong:
+
+- `SGP4SR.yaml`: model, fusion, graph pooling, BALW/SIMW, diffusion-denoiser.
+- `run.yaml`: data path, batch size, learning rate, early stopping, epochs, metrics.
+
+Config mặc định hiện tại:
+
+```yaml
+learning_rate: 0.0003
+weight_decay: 1e-5
+MAX_ITEM_LIST_LENGTH: 123
+epochs: 50
+stopping_step: 3
+valid_metric: NDCG@20
+hidden_dropout_prob: 0.4
+attn_dropout_prob: 0.4
+fusion_prior: [0.375, 0.5625, 0.0625]
+fusion_dynamic_ratio: 0.1
+w_balw: 0.001
+balw_type: batch
+balw_max_weight: 0.75
+w_simw: 0.0
+simw_mu: 2.0
+simw_target: router
+```
+
+### SIMW Module
+
+SIMW (`Semantic/Score-aware Ideal Modality Weight`) là regularization phụ cho router chọn trọng số giữa 3 nhánh `id/text/visual`.
+
+Luồng tính trong `sgp.py`:
+
+1. Model tính riêng logits cho `id`, `text`, `visual`.
+2. Với item positive trong batch, `eva_imp` ước lượng độ khó/rank của từng modality.
+3. `SIMW` chuyển độ khó thành `ideal_weights` bằng `softmax(-distance)`.
+4. Loss KL-divergence kéo router weights về `ideal_weights`.
+
+Các tham số:
+
+- `w_simw`: hệ số loss SIMW. `0.0` nghĩa là tắt module.
+- `simw_mu`: độ nhạy của ranking-feedback distance.
+- `simw_target`: chọn weights để supervise, gồm `router` hoặc `final`.
+- `simw_log_batches`: số batch đầu được in log `[simw]`.
+
+Ví dụ bật SIMW khi chạy thử:
+
+```bash
+cd /kaggle/SGP4SR/SGP4SR
+python run.py -d baby_modern_raw_unzip --smoke-steps 2 --w-simw 0.001 --simw-target router
+```
+
+Ví dụ chạy full experiment với SIMW:
+
+```bash
+cd /kaggle/SGP4SR/SGP4SR
+python run.py -d baby_modern_raw_unzip -note simw_ --w-simw 0.001 --simw-mu 2.0 --simw-target router
+```
+
+### BALW Module
+
+BALW là entropy-balance regularization cho fusion weights giữa `id/text/visual`.
+
+Các tham số:
+
+- `w_balw`: hệ số loss BALW.
+- `balw_type`: `sample`, `batch`, hoặc `threshold`.
+- `balw_max_weight`: ngưỡng max-weight khi dùng `threshold`.
+- `balw_log_batches`: số batch đầu được in log fusion weights.
+
+Ví dụ override BALW:
+
+```bash
+cd /kaggle/SGP4SR/SGP4SR
+python run.py -d baby_modern_raw_unzip --w-balw 0.001 --balw-type batch --balw-max-weight 0.75
+```
+
 ## Best Run Result
 
 Best run hiện tại là run 2 với config:

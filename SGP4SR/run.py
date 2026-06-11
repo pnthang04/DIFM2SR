@@ -330,6 +330,10 @@ if __name__ == '__main__':
     parser.add_argument('--balw-type', type=str, default='sample', choices=['sample', 'batch', 'threshold'])
     parser.add_argument('--balw-max-weight', type=float, default=0.75)
     parser.add_argument('--balw-log-batches', type=int, default=5)
+    parser.add_argument('--w-simw', type=float, default=0.0)
+    parser.add_argument('--simw-mu', type=float, default=2.0)
+    parser.add_argument('--simw-target', type=str, default='router', choices=['router', 'final'])
+    parser.add_argument('--simw-log-batches', type=int, default=5)
     args, unparsed = parser.parse_known_args()
     print(args)
 
@@ -355,4 +359,8 @@ if __name__ == '__main__':
         balw_type=args.balw_type,
         balw_max_weight=args.balw_max_weight,
         balw_log_batches=args.balw_log_batches,
+        w_simw=args.w_simw,
+        simw_mu=args.simw_mu,
+        simw_target=args.simw_target,
+        simw_log_batches=args.simw_log_batches,
     )
