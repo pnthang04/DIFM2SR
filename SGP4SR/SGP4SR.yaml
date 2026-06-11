@@ -19,6 +19,9 @@ fusion_scale: 1.6
 fusion_prior: [0.375, 0.5625, 0.0625]
 fusion_dynamic_ratio: 0.1
 w_balw: 0.001
+balw_type: batch
+balw_max_weight: 0.75
+balw_log_batches: 5
 
 use_diffusion_denoiser: False
 baseline_checkpoint_path: ''
@@ -29,6 +32,8 @@ diffusion_batch_size: 1024
 diffusion_steps: 4
 beta_graph: 0.001
 denoiser_blend_alpha: 0.1
+denoiser_text_blend_alpha: -1.0
+denoiser_image_blend_alpha: -1.0
 condition_type: id_graph
 
 item_drop_ratio: 0.1

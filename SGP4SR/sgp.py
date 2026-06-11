@@ -80,6 +80,12 @@ class SGP(SequentialRecommender):
         self.fusion_prior = config['fusion_prior']
         self.fusion_dynamic_ratio = config['fusion_dynamic_ratio']
         self.w_balw = float(cfg_get(config, 'w_balw', 0.0))
+        self.balw_type = str(cfg_get(config, 'balw_type', 'sample')).lower()
+        self.balw_max_weight = float(cfg_get(config, 'balw_max_weight', 0.75))
+        self.balw_log_batches = int(cfg_get(config, 'balw_log_batches', 5))
+        self._balw_logged_batches = 0
+        if self.balw_type not in {'sample', 'batch', 'threshold'}:
+            raise ValueError("balw_type must be one of: sample, batch, threshold")
         self.kmeans = MiniBatchKMeans(n_clusters=self.means_k, init_size=1024, batch_size=1024, random_state=100)
         self.initializer_range = config['initializer_range']
         self.loss_type = config['loss_type']
@@ -374,8 +380,30 @@ class SGP(SequentialRecommender):
     def BALW(self, modality_weights):
         """Entropy balance regularization for id/text/visual fusion weights."""
         modality_weights = torch.clamp(modality_weights, min=1e-9)
+        if self.balw_type == 'batch':
+            mean_weights = torch.clamp(modality_weights.mean(dim=0), min=1e-9)
+            n_modalities = mean_weights.numel()
+            return n_modalities * torch.sum(mean_weights * torch.log(mean_weights))
+        if self.balw_type == 'threshold':
+            max_weights = modality_weights.max(dim=1).values
+            return torch.mean(torch.relu(max_weights - self.balw_max_weight) ** 2)
         n_modalities = modality_weights.size(1)
         return torch.mean(n_modalities * torch.sum(modality_weights * torch.log(modality_weights), dim=1))
+
+    def maybe_log_fusion_weights(self, modality_weights):
+        if self.w_balw <= 0 or self._balw_logged_batches >= self.balw_log_batches:
+            return
+        with torch.no_grad():
+            mean_weights = modality_weights.detach().mean(dim=0).cpu().tolist()
+            max_weight = float(modality_weights.detach().max(dim=1).values.mean().cpu())
+        msg = (
+            "[balw] "
+            f"type={self.balw_type} "
+            f"mean_id={mean_weights[0]:.4f} mean_text={mean_weights[1]:.4f} "
+            f"mean_visual={mean_weights[2]:.4f} mean_max={max_weight:.4f}"
+        )
+        print(msg)
+        self._balw_logged_batches += 1
     
     def compute_max_similarity_index(self, j, i):
         similarity = torch.matmul(j, i.transpose(1, 2))
@@ -408,6 +436,7 @@ class SGP(SequentialRecommender):
             loss += (1 - self.mb) * self.loss_fct(logits, pos_items)
 
         if self.w_balw > 0:
+            self.maybe_log_fusion_weights(modality_weights)
             loss += self.w_balw * self.BALW(modality_weights)
 
         return loss

@@ -134,16 +134,21 @@ def prepare_diffusion_denoiser(config, model, train_data, logger):
     )
     blend_alpha = float(cfg_get(config, 'denoiser_blend_alpha', 0.2))
     blend_alpha = min(max(blend_alpha, 0.0), 1.0)
-    # Blend clean/raw modal features so diffusion nudges CGC/CIP instead of replacing strong raw signals.
-    final_text = blend_alpha * clean_text + (1.0 - blend_alpha) * model.raw_text_embs
-    final_image = blend_alpha * clean_image + (1.0 - blend_alpha) * model.raw_img_embs
+    text_alpha = float(cfg_get(config, 'denoiser_text_blend_alpha', -1.0))
+    image_alpha = float(cfg_get(config, 'denoiser_image_blend_alpha', -1.0))
+    text_alpha = blend_alpha if text_alpha < 0 else min(max(text_alpha, 0.0), 1.0)
+    image_alpha = blend_alpha if image_alpha < 0 else min(max(image_alpha, 0.0), 1.0)
+    # Blend clean/raw modal features per modality so diffusion can nudge weak modalities more gently.
+    final_text = text_alpha * clean_text + (1.0 - text_alpha) * model.raw_text_embs
+    final_image = image_alpha * clean_image + (1.0 - image_alpha) * model.raw_img_embs
     final_text[0].zero_()
     final_image[0].zero_()
     model.build_modal_structures(final_text, final_image)
     for p in model.diffusion_denoiser.parameters():
         p.requires_grad = False
     msg = (
-        f"[diffusion] rebuilt CGC/CIP with blended features alpha={blend_alpha}: "
+        f"[diffusion] rebuilt CGC/CIP with blended features "
+        f"alpha={blend_alpha} text_alpha={text_alpha} image_alpha={image_alpha}: "
         f"co_vm_adj={tuple(model.co_vm_adj.shape)} co_tm_adj={tuple(model.co_tm_adj.shape)} "
         f"sensev={tuple(model.sensev.shape)} senset={tuple(model.senset.shape)}"
     )
@@ -315,11 +320,16 @@ if __name__ == '__main__':
     parser.add_argument('--diffusion-warmup-epochs', type=int, default=5)
     parser.add_argument('--diffusion-lr', type=float, default=0.001)
     parser.add_argument('--diffusion-batch-size', type=int, default=1024)
-    parser.add_argument('--diffusion-steps', type=int, default=8)
-    parser.add_argument('--beta-graph', type=float, default=0.01)
-    parser.add_argument('--denoiser-blend-alpha', type=float, default=0.2)
+    parser.add_argument('--diffusion-steps', type=int, default=4)
+    parser.add_argument('--beta-graph', type=float, default=0.001)
+    parser.add_argument('--denoiser-blend-alpha', type=float, default=0.1)
+    parser.add_argument('--denoiser-text-blend-alpha', type=float, default=-1.0)
+    parser.add_argument('--denoiser-image-blend-alpha', type=float, default=-1.0)
     parser.add_argument('--condition-type', type=str, default='id_graph')
     parser.add_argument('--w-balw', type=float, default=0.0)
+    parser.add_argument('--balw-type', type=str, default='sample', choices=['sample', 'batch', 'threshold'])
+    parser.add_argument('--balw-max-weight', type=float, default=0.75)
+    parser.add_argument('--balw-log-batches', type=int, default=5)
     args, unparsed = parser.parse_known_args()
     print(args)
 
@@ -338,6 +348,11 @@ if __name__ == '__main__':
         diffusion_steps=args.diffusion_steps,
         beta_graph=args.beta_graph,
         denoiser_blend_alpha=args.denoiser_blend_alpha,
+        denoiser_text_blend_alpha=args.denoiser_text_blend_alpha,
+        denoiser_image_blend_alpha=args.denoiser_image_blend_alpha,
         condition_type=args.condition_type,
         w_balw=args.w_balw,
+        balw_type=args.balw_type,
+        balw_max_weight=args.balw_max_weight,
+        balw_log_batches=args.balw_log_batches,
     )
