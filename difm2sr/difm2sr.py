@@ -56,13 +56,52 @@ class IntentAwareWeightMapper(torch.nn.Module):
         with torch.no_grad():
             self.l2.weight.zero_()
             self.l2.bias.copy_(torch.log(prior.clamp_min(1e-8)) * self.temperature)
+
+
+class CrossModalAttentiveMoE(torch.nn.Module):
+    """Cross-modal MoE that updates each modality through residual expert deltas."""
+
+    def __init__(self, hidden_size, num_experts=4, dropout=0.1, residual_scale=0.1):
+        super(CrossModalAttentiveMoE, self).__init__()
+        self.num_experts = int(num_experts)
+        self.residual_scale = float(residual_scale)
+        input_size = hidden_size * 3
+        self.experts = torch.nn.ModuleList([
+            torch.nn.Sequential(
+                torch.nn.Linear(input_size, input_size),
+                torch.nn.GELU(),
+                torch.nn.Dropout(dropout),
+                torch.nn.Linear(input_size, input_size),
+            )
+            for _ in range(self.num_experts)
+        ])
+        self.gate = torch.nn.Linear(input_size, 3 * self.num_experts)
+        self.dropout = torch.nn.Dropout(dropout)
+        self.norm_id = torch.nn.LayerNorm(hidden_size)
+        self.norm_text = torch.nn.LayerNorm(hidden_size)
+        self.norm_visual = torch.nn.LayerNorm(hidden_size)
+
+    def forward(self, id_repr, text_repr, visual_repr):
+        x = torch.cat([id_repr, text_repr, visual_repr], dim=-1)
+        expert_outputs = torch.stack([expert(x) for expert in self.experts], dim=1)
+        expert_id, expert_text, expert_visual = torch.chunk(expert_outputs, 3, dim=-1)
+        gates = torch.softmax(self.gate(x).view(x.size(0), 3, self.num_experts), dim=-1)
+
+        delta_id = torch.sum(gates[:, 0].unsqueeze(-1) * expert_id, dim=1)
+        delta_text = torch.sum(gates[:, 1].unsqueeze(-1) * expert_text, dim=1)
+        delta_visual = torch.sum(gates[:, 2].unsqueeze(-1) * expert_visual, dim=1)
+
+        id_repr = self.norm_id(id_repr + self.residual_scale * self.dropout(delta_id))
+        text_repr = self.norm_text(text_repr + self.residual_scale * self.dropout(delta_text))
+        visual_repr = self.norm_visual(visual_repr + self.residual_scale * self.dropout(delta_visual))
+        return id_repr, text_repr, visual_repr
     
-class SGP(SequentialRecommender):
+class DIFM2SR(SequentialRecommender):
     r"""
     """
 
     def __init__(self, config, dataset, co_data, co_lens):
-        super(SGP, self).__init__(config, dataset)
+        super(DIFM2SR, self).__init__(config, dataset)
         
         self.hidden_size = config['hidden_size']  # same as embedding_size
         self.co_seq = F.normalize(self.get_co(co_data,co_lens), dim=1).to(self.device)
@@ -102,6 +141,20 @@ class SGP(SequentialRecommender):
         self.diffusion_denoiser = None
         self._diffusion_shapes_logged = False
         self.intent_weight_mapper = IntentAwareWeightMapper(self.hidden_size, self.fusion_temperature)
+        self.use_cross_modal_moe = bool(cfg_get(config, 'use_cross_modal_moe', True))
+        self.cross_modal_moe = CrossModalAttentiveMoE(
+            hidden_size=self.hidden_size,
+            num_experts=int(cfg_get(config, 'cross_moe_experts', 4)),
+            dropout=float(cfg_get(config, 'cross_moe_dropout', config['hidden_dropout_prob'])),
+            residual_scale=float(cfg_get(config, 'cross_moe_residual_scale', 0.1)),
+        )
+        self.w_future = float(cfg_get(config, 'w_future', 0.0))
+        self.w_future_contrastive = float(cfg_get(config, 'w_future_contrastive', 0.0))
+        self.future_horizon = int(cfg_get(config, 'future_horizon', 3))
+        self.future_temperature = float(cfg_get(config, 'future_temperature', 0.07))
+        self.future_min_confidence = float(cfg_get(config, 'future_min_confidence', 0.1))
+        self.future_log_batches = int(cfg_get(config, 'future_log_batches', 5))
+        self._future_logged_batches = 0
         fusion_prior = torch.as_tensor(self.fusion_prior, dtype=torch.float32)
         self.register_buffer("fusion_prior_weight", fusion_prior / fusion_prior.sum())
         
@@ -261,7 +314,14 @@ class SGP(SequentialRecommender):
     def mod(self, build_item_graph=True):
         h = self.item_embedding.weight.to(self.device)
         vcoh = torch.mm(self.co_vm_adj, h)
-        tcoh = torch.mm(self.co_tm_adj, h)     
+        tcoh = torch.mm(self.co_tm_adj, h)
+        if self.use_cross_modal_moe:
+            h, tcoh, vcoh = self.cross_modal_moe(h, tcoh, vcoh)
+            padding_mask = torch.ones((h.size(0), 1), dtype=h.dtype, device=h.device)
+            padding_mask[0] = 0
+            h = h * padding_mask
+            tcoh = tcoh * padding_mask
+            vcoh = vcoh * padding_mask
         return h,vcoh,tcoh
     
     def forward(self, item_seq, item_seq_len):
@@ -382,7 +442,7 @@ class SGP(SequentialRecommender):
 
         log_feats = self.last_layernorm(seqs) 
         output = self.gather_indexes(log_feats, item_seq_len - 1)   
-        return output, outputv, outputt, weights, router_weights  # [B H]
+        return output, outputv, outputt, weights, router_weights, log_feats, ID, hmv_emb, hmt_emb  # [B H]
 
     def BALW(self, modality_weights):
         """Entropy balance regularization for id/text/visual fusion weights."""
@@ -449,6 +509,65 @@ class SGP(SequentialRecommender):
         )
         print(msg)
         self._simw_logged_batches += 1
+
+    def future_aware_auxiliary_loss(self, log_feats, item_seq, item_seq_len, item_emb):
+        """Auxiliary future supervision from earlier states to later items in the same sequence."""
+        if self.w_future <= 0 and self.w_future_contrastive <= 0:
+            return log_feats.new_tensor(0.0)
+        if self.future_horizon <= 0:
+            return log_feats.new_tensor(0.0)
+
+        last_idx = (item_seq_len - 1).clamp(min=0)
+        target_items = item_seq.gather(1, last_idx.view(-1, 1)).squeeze(1)
+        target_states = self.gather_indexes(log_feats, last_idx)
+        losses = []
+        contrastive_losses = []
+
+        for horizon in range(1, self.future_horizon + 1):
+            valid = (item_seq_len > horizon) & (target_items > 0)
+            if not torch.any(valid):
+                continue
+
+            source_idx = (item_seq_len - 1 - horizon).clamp(min=0)
+            source_states = self.gather_indexes(log_feats, source_idx)
+            valid_source = source_states[valid]
+            valid_target_items = target_items[valid]
+
+            if self.w_future > 0:
+                logits = torch.matmul(valid_source, item_emb.transpose(0, 1))
+                ce = F.cross_entropy(logits, valid_target_items, reduction='none')
+                confidence = torch.exp(-ce.detach()).clamp(min=self.future_min_confidence, max=1.0)
+                losses.append(torch.mean(confidence * ce))
+
+            if self.w_future_contrastive > 0 and int(valid.sum().item()) > 1:
+                src = F.normalize(valid_source, dim=-1)
+                tgt = F.normalize(target_states[valid].detach(), dim=-1)
+                logits = torch.matmul(src, tgt.transpose(0, 1)) / self.future_temperature
+                labels = torch.arange(logits.size(0), device=logits.device)
+                contrastive_losses.append(F.cross_entropy(logits, labels))
+
+        if not losses and not contrastive_losses:
+            return log_feats.new_tensor(0.0)
+
+        aux_loss = log_feats.new_tensor(0.0)
+        if losses:
+            aux_loss = aux_loss + self.w_future * torch.stack(losses).mean()
+        if contrastive_losses:
+            aux_loss = aux_loss + self.w_future_contrastive * torch.stack(contrastive_losses).mean()
+        self.maybe_log_future_loss(aux_loss)
+        return aux_loss
+
+    def maybe_log_future_loss(self, loss):
+        if self._future_logged_batches >= self.future_log_batches:
+            return
+        print(
+            "[future] "
+            f"horizon={self.future_horizon} "
+            f"w_future={self.w_future} "
+            f"w_contrastive={self.w_future_contrastive} "
+            f"loss={float(loss.detach().cpu()):.6f}"
+        )
+        self._future_logged_batches += 1
     
     def compute_max_similarity_index(self, j, i):
         similarity = torch.matmul(j, i.transpose(1, 2))
@@ -458,21 +577,23 @@ class SGP(SequentialRecommender):
         return result
 
     def calculate_loss(self, interaction):
-        _,hmv_emb,hmt_emb = self.mod()
         item_seq = interaction[self.ITEM_SEQ]
         item_seq_len = interaction[self.ITEM_SEQ_LEN]
-        seq_output, outputv, outputt, modality_weights, router_weights = self.forward(item_seq, item_seq_len)
+        (
+            seq_output, outputv, outputt, modality_weights, router_weights,
+            log_feats, id_emb, hmv_emb, hmt_emb
+        ) = self.forward(item_seq, item_seq_len)
         pos_items = interaction[self.POS_ITEM_ID]
 
         if self.loss_type == 'BPR':
             neg_items = interaction[self.NEG_ITEM_ID]
-            pos_items_emb = self.item_embedding(pos_items)
-            neg_items_emb = self.item_embedding(neg_items)
+            pos_items_emb = id_emb[pos_items]
+            neg_items_emb = id_emb[neg_items]
             pos_score = torch.sum(seq_output * pos_items_emb, dim=-1)  # [B]
             neg_score = torch.sum(seq_output * neg_items_emb, dim=-1)  # [B]
             loss = self.loss_fct(pos_score, neg_score)
         else:  # self.loss_type = 'CE'
-            test_item_emb = self.item_embedding.weight
+            test_item_emb = id_emb
             id_logits = torch.matmul(seq_output, test_item_emb.transpose(0, 1))
             visual_logits = torch.matmul(outputv, hmv_emb.transpose(0, 1))
             text_logits = torch.matmul(outputt, hmt_emb.transpose(0, 1))
@@ -492,14 +613,17 @@ class SGP(SequentialRecommender):
             self.maybe_log_fusion_weights(modality_weights)
             loss += self.w_balw * self.BALW(modality_weights)
 
+        loss += self.future_aware_auxiliary_loss(log_feats, item_seq, item_seq_len, id_emb)
+
         return loss
 
     def full_sort_predict(self, interaction):
-        h,vcoh,tcoh = self.mod()
         item_seq = interaction[self.ITEM_SEQ]
         item_seq_len = interaction[self.ITEM_SEQ_LEN]
-        seq_output, outputv, outputt, _, _ = self.forward(item_seq, item_seq_len)
-        test_items_emb = self.item_embedding.weight
+        (
+            seq_output, outputv, outputt, _, _, _, id_emb, vcoh, tcoh
+        ) = self.forward(item_seq, item_seq_len)
+        test_items_emb = id_emb
         scores = torch.matmul(seq_output, test_items_emb.transpose(0, 1))  # [B n_items]
         scores += self.mb * torch.matmul(outputv, vcoh.transpose(0, 1))  # [B]
         scores += (1 - self.mb) * torch.matmul(outputt, tcoh.transpose(0, 1))  # [B] 

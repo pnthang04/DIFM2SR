@@ -121,14 +121,14 @@ def prepare(args: argparse.Namespace) -> Path:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Extract baby_modern_bge_siglip.tar.gz and prepare RecBole/SGP4SR files."
+        description="Extract baby_modern_bge_siglip.tar.gz and prepare RecBole/DIFM2SR files."
     )
     parser.add_argument("--archive", type=Path, default=DEFAULT_ARCHIVE)
     parser.add_argument("--extract-base", type=Path, default=DEFAULT_EXTRACT_DIR)
     parser.add_argument("--output-base", type=Path, default=Path("dataset"))
     parser.add_argument("--output-name", default=DEFAULT_OUTPUT_NAME)
     parser.add_argument("--force", action="store_true", help="Overwrite extracted/prepared files.")
-    parser.add_argument("--run-train", action="store_true", help="Run SGP4SR training after preparation.")
+    parser.add_argument("--run-train", action="store_true", help="Run DIFM2SR training after preparation.")
     args = parser.parse_args()
 
     prepare(args)

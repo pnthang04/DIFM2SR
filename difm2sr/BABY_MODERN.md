@@ -6,7 +6,7 @@ Keep the archive at:
 dataset/baby_modern_bge_siglip.tar.gz
 ```
 
-Prepare it for RecBole/SGP4SR:
+Prepare it for RecBole/DIFM2SR:
 
 ```bash
 python scripts/prepare_baby_modern.py

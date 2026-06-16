@@ -27,7 +27,7 @@ class IndexableBuffer:
         return self.__getitem__(index)
 
 
-class SGPDataset(SequentialDataset):
+class DIFM2SRDataset(SequentialDataset):
     def __init__(self, config):
         super().__init__(config)
         self.text_size = config['text_size']

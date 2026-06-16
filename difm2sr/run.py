@@ -19,10 +19,10 @@ from recbole.data import data_preparation
 from recbole.utils import init_seed, init_logger, set_color
 
 
-from data.dataset import SGPDataset
+from data.dataset import DIFM2SRDataset
 from collections import OrderedDict
 
-from sgp import SGP
+from difm2sr import DIFM2SR
 
 from recbole.trainer import Trainer
 
@@ -156,10 +156,10 @@ def prepare_diffusion_denoiser(config, model, train_data, logger):
     logger.info(msg)
 
 
-def run(dataset, setting='SGP4SR.yaml,run.yaml',log_prefix="", **kwargs):
+def run(dataset, setting='DIFM2SR.yaml,run.yaml',log_prefix="", **kwargs):
     smoke_steps = int(kwargs.pop('smoke_steps', 0) or 0)
     setting = setting.split(',')
-    config = Config(model=SGP, dataset=dataset, config_file_list=setting, config_dict=kwargs)
+    config = Config(model=DIFM2SR, dataset=dataset, config_file_list=setting, config_dict=kwargs)
 
     config['log_prefix'] = log_prefix
 
@@ -168,7 +168,7 @@ def run(dataset, setting='SGP4SR.yaml,run.yaml',log_prefix="", **kwargs):
     logger = getLogger()
     logger.info(config)
 
-    dataset = SGPDataset(config)
+    dataset = DIFM2SRDataset(config)
 
     logger.info(dataset)
 
@@ -234,7 +234,7 @@ def run(dataset, setting='SGP4SR.yaml,run.yaml',log_prefix="", **kwargs):
         co_data = np.zeros((len(train_data.dataset), 50), dtype=np.int64)
         co_lens = np.ones(len(train_data.dataset), dtype=np.int64)
     
-    model = SGP(config, train_data.dataset, co_data, co_lens).to(config['device'])
+    model = DIFM2SR(config, train_data.dataset, co_data, co_lens).to(config['device'])
     prepare_diffusion_denoiser(config, model, train_data, logger)
     logger.info(model)
     trainer = Trainer(config, model)
@@ -294,7 +294,7 @@ def run(dataset, setting='SGP4SR.yaml,run.yaml',log_prefix="", **kwargs):
     # Save to JSON with timestamp
     timestamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
     dataset_name_clean = config['dataset'].replace(' ', '_').replace('\n', '').replace('\x1b', '')
-    result_filename = os.path.join(results_dir, f'SGP-{dataset_name_clean}-{log_prefix}{timestamp}.json')
+    result_filename = os.path.join(results_dir, f'DIFM2SR-{dataset_name_clean}-{log_prefix}{timestamp}.json')
     with open(result_filename, 'w') as f:
         json.dump(results, f, indent=2)
     logger.info(f"Results saved to {result_filename}")
@@ -311,7 +311,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('-d', type=str, default='baby', help='dataset name')
     parser.add_argument('-f', type=bool, default=True)
-    parser.add_argument('-setting', type=str, default='SGP4SR.yaml,run.yaml')
+    parser.add_argument('-setting', type=str, default='DIFM2SR.yaml,run.yaml')
     parser.add_argument('-note', type=str, default='')
     parser.add_argument('--smoke-steps', type=int, default=0)
     parser.add_argument('--use-diffusion-denoiser', action='store_true')

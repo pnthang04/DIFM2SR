@@ -1,7 +1,6 @@
 # DIFM2SR: Denoised Intent-aware Future-aware Multimodal Sequential Recommendation
 
-[Phạm Ngọc Thắng](https://github.com/pnthang04)<sup>✉</sup>  
-Posts and Telecommunications Institute of Technology
+[Phạm Ngọc Thắng](mailto:pnthangkthl@gmail.com)<sup>✉</sup>  
 
 ![Task](https://img.shields.io/badge/Task-Multi--Modal-red)
 ![Task](https://img.shields.io/badge/Task-Recommendation-red)
@@ -90,21 +89,21 @@ pip install -r requirements.txt
 Kiểm tra nhanh:
 
 ```bash
-cd main_model
+cd difm2sr
 python run.py -d baby_modern_raw_unzip --smoke-steps 2
 ```
 
 Train đầy đủ:
 
 ```bash
-cd main_model
+cd difm2sr
 python run.py -d baby_modern_raw_unzip
 ```
 
 Kết quả được lưu trong:
 
 ```text
-main_model/results/
+difm2sr/results/
 ```
 
 ## Metrics
@@ -135,7 +134,11 @@ Kết quả chính từ báo cáo:
 ## Cấu Trúc
 
 ```text
-main_model/    code model, config, train/eval
+difm2sr/
+  difm2sr.py        model DIFM2SR
+  DIFM2SR.yaml      model config
+  run.py            train/eval entrypoint
+  run.yaml          data/eval config
 baseline/      các baseline so sánh
 img/           ảnh kiến trúc và module
 pdf/           báo cáo và slide
