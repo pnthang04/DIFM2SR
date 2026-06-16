@@ -1,0 +1,26 @@
+# Core deep learning stack
+torch>=2.0.0
+torchvision>=0.15.0
+
+# Data processing and scientific computing
+numpy>=1.24.0,<2.0.0
+pandas>=1.3.0
+scipy>=1.7.0
+scikit-learn>=1.0.0
+
+# Recommendation framework
+recbole>=1.1.0
+
+# Training and utilities
+accelerate>=1.0.1
+PyYAML>=5.4.0
+tqdm>=4.60.0
+python-dateutil>=2.8.0
+colorama>=0.4.6
+
+# Image processing
+Pillow>=8.0.0
+
+# Build utilities for MiFuSR/skrec Cython extensions
+Cython>=0.29.36
+setuptools>=61.0

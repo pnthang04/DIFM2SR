@@ -1,0 +1,147 @@
+# DIFM2SR: Multimodal Sequential Recommendation
+
+![Task](https://img.shields.io/badge/Task-Multi--Modal-red)
+![Task](https://img.shields.io/badge/Task-Recommendation-red)
+![Framework](https://img.shields.io/badge/Framework-RecBole-blue)
+![Model](https://img.shields.io/badge/Model-Sequential%20RecSys-green)
+
+Quick Links:
+[📦 Dataset](https://huggingface.co/datasets/thangkt/baby-modern-bge-siglip) |
+[⚙️ Experiments](#chạy-thử-nghiệm) |
+[📊 Metrics](#kết-quả) |
+[🖼️ Architecture](#kiến-trúc)
+
+## Giới Thiệu
+
+Mô hình gợi ý tuần tự đa phương thức dùng lịch sử tương tác của người dùng cùng ba loại tín hiệu item: `ID`, `text`, `image`.
+
+Mục tiêu chính:
+
+- Giảm nhiễu trong text/image.
+- Học tương tác giữa các modality.
+- Fusion động để tránh một modality lấn át các modality khác.
+- Tận dụng tín hiệu item tương lai trong training.
+
+## Kiến Trúc
+
+![Overall Architecture](img/fig_overall_architecture.png)
+
+Pipeline gồm 4 phần:
+
+1. `Denoised Representation Learning`: học riêng ID, text, image và giảm nhiễu từng modality.
+2. `Cross-Modal Attentive MoE`: cho các modality trao đổi thông tin bằng Mixture of Experts.
+3. `Intent-Aware Late Fusion`: mỗi modality dự đoán riêng, sau đó fusion bằng trọng số động.
+4. `Future-Aware Auxiliary Learning`: dùng item tương lai trong training, không dùng khi inference.
+
+### Module 1
+
+![Module 1](img/fig_module1.png)
+
+Học representation riêng cho từng modality, kết hợp denoising, graph co-occurrence và interest centers.
+
+### Module 2
+
+![Cross-Modal MoE](img/fig_cross_modal_moe.png)
+
+MoE học quan hệ bổ trợ giữa `ID`, `text`, `image`, sau đó cập nhật từng modality theo residual.
+
+### Module 3
+
+![Module 3](img/fig_module3.png)
+
+Fusion ở tầng logits:
+
+```text
+y = w_id * y_id + w_text * y_text + w_image * y_image
+```
+
+Các loss cân bằng giúp tránh weight collapse vào một modality duy nhất.
+
+### Module 4
+
+![Future Learning](img/fig_future_learning.png)
+
+Future-aware learning dùng các item sau bước kế tiếp để học xu hướng dài hơn trong training.
+
+## Dataset
+
+Dataset Baby Modern BGE + SigLIP:
+
+https://huggingface.co/datasets/thangkt/baby-modern-bge-siglip
+
+Dữ liệu gồm:
+
+- `train/valid/test interactions`
+- text feature BGE
+- image feature SigLIP
+- mapping user/item
+
+## Cài Đặt
+
+```bash
+pip install -r requirements.txt
+```
+
+## Chạy Thử Nghiệm
+
+Kiểm tra nhanh:
+
+```bash
+cd main_model
+python run.py -d baby_modern_raw_unzip --smoke-steps 2
+```
+
+Train đầy đủ:
+
+```bash
+cd main_model
+python run.py -d baby_modern_raw_unzip
+```
+
+Kết quả được lưu trong:
+
+```text
+main_model/results/
+```
+
+## Metrics
+
+Sử dụng các metric ranking:
+
+- `Recall@K`
+- `NDCG@K`
+
+Config mặc định:
+
+```yaml
+topk: [5, 10, 20, 50]
+metrics: [Recall, NDCG]
+valid_metric: NDCG@20
+```
+
+## Kết Quả
+
+Kết quả chính từ báo cáo:
+
+| Dataset | Method | R@10 | R@20 | N@10 | N@20 |
+| --- | --- | ---: | ---: | ---: | ---: |
+| Baby | Proposed | **0.0596** | **0.0848** | **0.0430** | **0.0400** |
+| Sports | Proposed | **0.0611** | **0.0902** | 0.0313 | **0.0388** |
+
+Best local run trên Baby:
+
+| Split | R@10 | R@20 | N@10 | N@20 |
+| --- | ---: | ---: | ---: | ---: |
+| Valid | 0.0706 | 0.1022 | 0.0355 | 0.0435 |
+| Test | 0.0576 | 0.0848 | 0.0301 | 0.0369 |
+
+## Cấu Trúc
+
+```text
+main_model/    code model, config, train/eval
+baseline/      các baseline so sánh
+img/           ảnh kiến trúc và module
+pdf/           báo cáo và slide
+requirements.txt
+README.md
+```
