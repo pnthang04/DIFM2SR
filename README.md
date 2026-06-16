@@ -1,5 +1,8 @@
 # DIFM2SR: Denoised Intent-aware Future-aware Multimodal Sequential Recommendation
 
+[Phạm Ngọc Thắng](https://github.com/pnthang04)<sup>✉</sup>  
+Posts and Telecommunications Institute of Technology
+
 ![Task](https://img.shields.io/badge/Task-Multi--Modal-red)
 ![Task](https://img.shields.io/badge/Task-Recommendation-red)
 ![Framework](https://img.shields.io/badge/Framework-RecBole-blue)
@@ -128,12 +131,6 @@ Kết quả chính từ báo cáo:
 | Baby | Proposed | **0.0596** | **0.0848** | **0.0430** | **0.0400** |
 | Sports | Proposed | **0.0611** | **0.0902** | 0.0313 | **0.0388** |
 
-Best local run trên Baby:
-
-| Split | R@10 | R@20 | N@10 | N@20 |
-| --- | ---: | ---: | ---: | ---: |
-| Valid | 0.0706 | 0.1022 | 0.0355 | 0.0435 |
-| Test | 0.0576 | 0.0848 | 0.0301 | 0.0369 |
 
 ## Cấu Trúc
 
@@ -145,3 +142,9 @@ pdf/           báo cáo và slide
 requirements.txt
 README.md
 ```
+## Contact
+
+
+Phạm Ngọc Thắng   
+Email: pnthangkthl@gmail.com  
+GitHub: https://github.com/pnthang04
