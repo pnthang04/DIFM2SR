@@ -1,0 +1,7 @@
+{
+  "archive": "dataset/_archives/baby_modern_siglip_large.tar.gz",
+  "num_items": 7015,
+  "num_users": 19357,
+  "text_dim": 1024,
+  "visual_dim": 1024
+}
