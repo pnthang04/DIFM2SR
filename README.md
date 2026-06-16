@@ -1,4 +1,4 @@
-# DIFM2SR: Multimodal Sequential Recommendation
+# DIFM2SR: Denoised Intent-aware Future-aware Multimodal Sequential Recommendation
 
 ![Task](https://img.shields.io/badge/Task-Multi--Modal-red)
 ![Task](https://img.shields.io/badge/Task-Recommendation-red)
